@@ -1,0 +1,41 @@
+
+# Containerized Infrastructure Orchestration
+# Architecture Stack:
+# 1. MinIO Object Storage (S3 Compatible Blob Store for Raw API Dumps)
+# 2. Apache Spark Master & Worker (Distributed Data Processing Engine)
+# 3. PostgreSQL Database (Relational Data Warehouse for Joined Output)
+
+services:
+  #Provides S3-compatible blob storage to store raw CSV and JSON API payloads
+  minio:
+    image: quay.io/minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:    #Root credentials matching boto3 S3 client & PySpark S3A configurations
+      MINIO_ROOT_USER: cariappa
+      MINIO_ROOT_PASSWORD: D3chamma
+    ports:
+      - "9000:9000"     #S3 API endpoint (used by boto3, PySpark S3A connector)
+      - "9001:9001"     #MinIO Web Console UI dashboard
+    volumes:
+      - ./minio-data:/data    #Local volume mount for persistent blob storage data
+  spark-master:   #Coordinator node for distributed PySpark execution
+    image: apache/spark:3.5.9
+    command: /opt/spark/bin/spark-class org.apache.spark.deploy.master.Master
+    ports:
+      - "8080:8080"   #Spark Master Web UI dashboard
+      - "7077:7077"   #Spark Master RPC communication port for workers or clients
+
+  spark-worker:   #Distributed compute node executing RDD/DataFrame transformations
+    image: apache/spark:3.5.9
+    command: /opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077
+    depends_on:
+      - spark-master    #Ensuring Spark master starts before worker node provisions
+    
+  postgres:     #Relational database to store transformed spatial-temporal joined records
+    image: postgres:16
+    environment:    #Relational database credentials matching PySpark JDBC & SQLAlchemy URIs
+      POSTGRES_USER: cariappa
+      POSTGRES_PASSWORD: D3chamma
+      POSTGRES_DB: fireweather
+    ports:    #Mapping host port 5433 to container port 5432 to prevent local PostgreSQL conflicts
+      - "5433:5432"
